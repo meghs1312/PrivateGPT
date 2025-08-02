@@ -1,129 +1,81 @@
-from database.db import init_database, insert_chat_message, get_chat_history
 import streamlit as st
 import requests
+from database.db import init_database, insert_chat_message, get_chat_history
 
+# Function to get response from the backend API
 def chatbot_response(input_text):
     url = 'https://avid-infinity-386618.el.r.appspot.com/api'
     payload = {'userPrompt': input_text}
     try:
-        with requests.post(url, json=payload) as response:
-            response.raise_for_status()  # Check for any HTTP errors
-            data = response.json()
-            print(data)
-            return data
+        response = requests.post(url, json=payload)
+        response.raise_for_status()
+        return response.json()
     except requests.exceptions.RequestException as e:
-        return f'Error: {e}'
-     
+        return {'privatePrompt': f"Error: {str(e)}"}
+
+# Display chat history from DB (used in sidebar)
 def display_chat_history(chat_history):
-    st.subheader("Chat History")
+    st.subheader("Chat History (from DB)")
     chat_container = st.empty()
     chat_log = ""
-    # Process the chat history to make it more readable and display it
-    for index, (sender, message) in enumerate(chat_history):
-        if sender == "You":
-            chat_log += f'<div style="text-align: left; padding-left: 20px; padding: 1.5rem; color:#fff; background-color: #333;">{message}</div>'
-        elif sender == "PrivateGPT":
-            chat_log += f'<div style="text-align: right; padding-left: 20px; padding: 1.5rem; color:#fff; background-color: #555;">{message}</div>'
-    chat_container.write(chat_log, unsafe_allow_html=True)
+    for sender, message in chat_history:
+        style = "#333" if sender == "You" else "#555"
+        chat_log += f'<div style="padding: 1rem; margin-bottom: 5px; color:#fff; background-color: {style}; border-radius: 8px;">{sender}: {message}</div>'
+    chat_container.markdown(chat_log, unsafe_allow_html=True)
 
+# Clear session chat history
 def clear_chat_history():
     st.session_state.chat_history = []
 
-    
-        
+# MAIN APP
 def main():
-    # Initialize the database and chat history table
-    db_connected = init_database()
+    st.set_page_config(page_title="Private GPT", layout="centered")
 
-    if db_connected:
-        print("Database connection successful 🔗")
-    else:
-        print("Database connection failed ❌")
+    st.title("🤖 Private GPT")
+
+    # Initialize DB
+    if not init_database():
+        st.error("Failed to connect to the database.")
         st.stop()
-    
-    # Get the chat history from the database
-    chat_history = get_chat_history()
-    
-    # Initialize SessionState to store chat history
+
+    # Load previous history from session state
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
-    st.title("Private GPT")
+    # Sidebar
+    st.sidebar.title("⚙️ Settings")
+    if st.sidebar.button("🕘 Show DB Chat History"):
+        db_history = get_chat_history()
+        display_chat_history(db_history)
 
-    # Sidebar with settings
-    st.sidebar.title("Settings")
-    # Add more settings as needed
-
-    # Apply custom CSS to change the background color
-    background_color = "#444654"
-    st.markdown(
-        f"""
-        <style>
-        body {{
-            background-color: {background_color};
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    
-    # Add a container to hold the textbox
-    container = st.container()
-    container.markdown(
-        """
-        <style>
-        .st-container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            padding: 10px;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    user_input = container.text_input("You:", "",key="text_input")
-
-    if st.button("Send"):
-        response = chatbot_response(user_input)
-        st.session_state.chat_history.append(("You", user_input))
-        st.session_state.chat_history.append(("PrivateGPT", response["privatePrompt"]))
-        insert_chat_message("You", user_input)
-        insert_chat_message("PrivateGPT", response["privatePrompt"])
-        user_input = ""  # Clear the user input after sending
-
-    #  # Display previous chats in the sidebar
-    st.sidebar.subheader("Chat History")
-    st.sidebar.markdown(
-        """
-        <style>
-        .sidebar .sidebar-content {
-            background-color: #333;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    if st.sidebar.button("Show chat history"):
-        # Show chat history
-        display_chat_history(chat_history)
-
-    if st.sidebar.button("Clear chat history"):
+    if st.sidebar.button("🗑️ Clear Session History"):
         clear_chat_history()
-    
-    st.subheader("Chat")
-    chat_container = st.empty()
-    chat_log = ""
+
+    # Text input and send button
+    user_input = st.text_input("You:", key="text_input")
+    if st.button("Send"):
+        if user_input.strip() == "":
+            st.warning("Please enter a message.")
+        else:
+            response_data = chatbot_response(user_input)
+            bot_reply = response_data.get("privatePrompt", "Sorry, no response.")
+
+            # Save to session and DB
+            st.session_state.chat_history.append(("You", user_input))
+            st.session_state.chat_history.append(("PrivateGPT", bot_reply))
+            insert_chat_message("You", user_input)
+            insert_chat_message("PrivateGPT", bot_reply)
+
+            # Clear input
+            st.session_state.text_input = ""
+
+    # Display current chat session
+    st.subheader("Live Chat")
+    chat_display = ""
     for sender, message in st.session_state.chat_history:
-        if sender == "You":
-            chat_log += f'<div style="text-align: left; padding-left: 20px; padding: 1.5rem; color:#fff; background-color: #333;">{message}</div>'
-        elif  sender == "PrivateGPT":
-             chat_log += f'<div style="text-align: left; padding-left: 20px; padding: 1.5rem; color:#fff; background-color: #555;">{message}</div>'
-
-
-    chat_container.write(chat_log, unsafe_allow_html=True)
+        style = "#333" if sender == "You" else "#555"
+        chat_display += f'<div style="padding: 1rem; margin-bottom: 5px; color:#fff; background-color: {style}; border-radius: 8px;">{sender}: {message}</div>'
+    st.markdown(chat_display, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
