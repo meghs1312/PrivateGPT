@@ -56,7 +56,7 @@ To run Private GPT project locally, ensure that you have the following dependenc
 1. Clone the repository:
 
    ```shell
-   git clone https://github.com/jitinchekka/tpf-buildathon.git
+https://github.com/meghs1312/PrivateGPT
 
 2. Navigate to the project directory:
 
